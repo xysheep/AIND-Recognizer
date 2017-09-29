@@ -75,9 +75,18 @@ class SelectorBIC(ModelSelector):
         :return: GaussianHMM object
         """
         warnings.filterwarnings("ignore", category=DeprecationWarning)
-
+        minBIC = float('inf')
+        best_num_components = self.n_constant
+        for nc in range(self.min_n_components, self.max_n_components + 1):
+            model = GaussianHMM(n_components=nc, covariance_type="diag", n_iter=1000,
+                                random_state=self.random_state, verbose=False).fit(self.X, self.lengths)
+            logL = model.score(self.X, self.lengths)
+            BIC = -2*logL + np.log(np.array(self.X).shape[0]) * nc * np.array(self.X).shape[1]
+            if BIC < minBIC:
+                minBIC = BIC
+                best_num_components = nc
         # TODO implement model selection based on BIC scores
-        raise NotImplementedError
+        return self.base_model(best_num_components)
 
 
 class SelectorDIC(ModelSelector):
@@ -92,9 +101,18 @@ class SelectorDIC(ModelSelector):
 
     def select(self):
         warnings.filterwarnings("ignore", category=DeprecationWarning)
-
+        minDIC = float('inf')
+        best_num_components = self.n_constant
+        for nc in range(self.min_n_components, self.max_n_components + 1):
+            model = GaussianHMM(n_components=nc, covariance_type="diag", n_iter=1000,
+                                random_state=self.random_state, verbose=False).fit(self.X, self.lengths)
+            logL = model.score(self.X, self.lengths)
+            DIC = -2*logL + np.log(np.array(self.X).shape[0]) * nc * np.array(self.X).shape[1]
+            if DIC < minDIC:
+                minBIC = DIC
+                best_num_components = nc
         # TODO implement model selection based on DIC scores
-        raise NotImplementedError
+        return self.base_model(best_num_components)
 
 
 class SelectorCV(ModelSelector):

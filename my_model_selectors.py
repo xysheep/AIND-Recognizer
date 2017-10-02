@@ -78,13 +78,17 @@ class SelectorBIC(ModelSelector):
         minBIC = float('inf')
         best_num_components = self.n_constant
         for nc in range(self.min_n_components, self.max_n_components + 1):
-            model = GaussianHMM(n_components=nc, covariance_type="diag", n_iter=1000,
-                                random_state=self.random_state, verbose=False).fit(self.X, self.lengths)
-            logL = model.score(self.X, self.lengths)
-            BIC = -2*logL + np.log(np.array(self.X).shape[0]) * nc * np.array(self.X).shape[1]
-            if BIC < minBIC:
-                minBIC = BIC
-                best_num_components = nc
+            try:
+                model = GaussianHMM(n_components=nc, covariance_type="diag", n_iter=1000,
+                                    random_state=self.random_state, verbose=False).fit(self.X, self.lengths)
+                logL = model.score(self.X, self.lengths)
+                p = nc * nc + 2 * nc * len(self.X[0]) - 1
+                BIC = -2*logL + np.log(nc) * p
+                if BIC < minBIC:
+                    minBIC = BIC
+                    best_num_components = nc
+            except (ValueError):
+                continue
         # TODO implement model selection based on BIC scores
         return self.base_model(best_num_components)
 
@@ -101,15 +105,29 @@ class SelectorDIC(ModelSelector):
 
     def select(self):
         warnings.filterwarnings("ignore", category=DeprecationWarning)
-        minDIC = float('inf')
+        maxDIC = float('-inf')
         best_num_components = self.n_constant
         for nc in range(self.min_n_components, self.max_n_components + 1):
-            model = GaussianHMM(n_components=nc, covariance_type="diag", n_iter=1000,
+            try:
+                model = GaussianHMM(n_components=nc, covariance_type="diag", n_iter=1000,
                                 random_state=self.random_state, verbose=False).fit(self.X, self.lengths)
-            logL = model.score(self.X, self.lengths)
-            DIC = -2*logL + np.log(np.array(self.X).shape[0]) * nc * np.array(self.X).shape[1]
-            if DIC < minDIC:
-                minBIC = DIC
+                thisscore = model.score(self.X, self.lengths)
+            except (RuntimeError, ValueError):
+                pass
+            wordscore = {}
+            for word, (X, lengths) in self.hwords.items():
+                if word == self.this_word:
+                    continue
+                try:
+                    score = model.score(X, lengths)
+                except (RuntimeError, ValueError):
+                    pass
+                wordscore[word] = score
+            if len(wordscore) == 0:
+                continue
+            DIC = (thisscore - np.mean(list(wordscore.values())))
+            if DIC > maxDIC:
+                maxBIC = DIC
                 best_num_components = nc
         # TODO implement model selection based on DIC scores
         return self.base_model(best_num_components)
@@ -122,6 +140,28 @@ class SelectorCV(ModelSelector):
 
     def select(self):
         warnings.filterwarnings("ignore", category=DeprecationWarning)
-
+        maxlogL = float('inf')
+        best_num_components = self.n_constant
+        for nc in range(self.min_n_components, self.max_n_components + 1):
+            cumlogL = 0
+            folds = 0
+            n_splits = min(len(self.sequences), 3)
+            split_method = KFold(n_splits=n_splits)
+            for cv_train_idx, cv_test_idx in split_method.split(self.sequences):
+                X, lengths = combine_sequences(cv_train_idx, self.sequences)
+                tX, tlengths = combine_sequences(cv_test_idx, self.sequences)
+                try:
+                    model = GaussianHMM(n_components=nc, covariance_type="diag", n_iter=1000,
+                                    random_state=self.random_state, verbose=False).fit(X, lengths)
+                    logL = model.score(tX, tlengths)
+                    cumlogL += logL
+                    folds += 1
+                except (RuntimeError, ValueError):
+                    continue
+            if folds == 0:
+                continue
+            if logL/folds > maxlogL:
+                maxlogL = logL/folds
+                best_num_components = nc
         # TODO implement model selection using CV
-        raise NotImplementedError
+        return self.base_model(best_num_components)
